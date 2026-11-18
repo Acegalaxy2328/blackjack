@@ -278,6 +278,7 @@ function buildShoe(){
 function draw(hidden){if(!G.shoe.length)buildShoe();const c=G.shoe.pop();return {r:c.r,s:c.s,id:++uid,hidden:!!hidden}}
 const val=r=>r==='A'?1:(r==='J'||r==='Q'||r==='K')?10:+r;
 function score(cards,all){let t=0,a=0;for(const c of cards){if(c.hidden&&!all)continue;t+=val(c.r);if(c.r==='A')a++}let soft=false;if(a&&t+10<=21){t+=10;soft=true}return {t,soft}}
+const special=h=>{if(score(h.cards,true).t>21)return null;if(h.cards.length===3&&h.cards.every(c=>c.r==='7'))return '777';if(h.cards.length>=5)return 'five';return null};
 const isBJ=h=>h.cards.length===2&&!h.split&&score(h.cards,true).t===21;
 const dealerBJ=()=>G.dealer.length===2&&score(G.dealer,true).t===21;
 
@@ -464,11 +465,13 @@ async function act(a){
     h.cards.push(draw());G.msg=promptMsg();render();
     const t=score(h.cards).t;
     if(t>21){G.busy=true;flash('爆牌','bad');await sleep(600);G.busy=false;h.done=true;return nextHand()}
+    const sp=special(h);
+    if(sp){G.busy=true;flash(sp==='777'?'777！':'五龍！','big');rain(['🐉','🪙','💰','✨'],30);await sleep(900);G.busy=false;h.done=true;return nextHand()}
     if(t===21){G.busy=true;await sleep(350);G.busy=false;h.done=true;return nextHand()}
   }else if(a==='stand'){h.done=true;return nextHand()}
   else if(a==='double'&&can.dbl){
     S.balance-=h.bet;h.bet*=2;h.dbl=true;h.cards.push(draw());render();G.busy=true;await sleep(550);G.busy=false;
-    if(score(h.cards).t>21)flash('爆牌','bad');
+    if(score(h.cards).t>21)flash('爆牌','bad');else if(special(h)==='777')flash('777！','big');
     h.done=true;return nextHand();
   }else if(a==='split'&&can.split){
     S.balance-=h.bet;const c2=h.cards.pop();
@@ -495,7 +498,7 @@ async function nextHand(){
 async function dealerPlay(){
   G.phase='dealer';G.busy=true;G.msg='莊家開牌';
   G.dealer[1].hidden=false;G.dealer[1].was=true;render();await sleep(700);
-  const live=G.hands.some(h=>!h.surr&&score(h.cards).t<=21);
+  const live=G.hands.some(h=>!h.surr&&score(h.cards).t<=21&&!special(h));
   if(live){
     while(true){const {t,soft}=score(G.dealer,true);if(t<17||(t===17&&soft&&S.set.h17)){G.dealer.push(draw());G.msg='莊家補牌';render();await sleep(620)}else break}
   }
@@ -508,6 +511,8 @@ function settle(){
     const p=score(h.cards,true).t,pbj=isBJ(h);let r=0;staked+=h.bet;
     if(h.surr){r=h.bet/2;h.res='投降';h.resCls='push';S.stats.lose++}
     else if(p>21){h.res='爆牌';h.resCls='lose';S.stats.lose++}
+    else if(special(h)==='777'){r=h.bet*11;h.res='777 ×10';h.resCls='bj';S.stats.win++;bjWin=true}
+    else if(special(h)==='five'){r=h.bet*4;h.res='五龍 ×3';h.resCls='bj';S.stats.win++;bjWin=true}
     else if(pbj&&!dbj){r=h.bet*2.5;h.res='BLACKJACK';h.resCls='bj';S.stats.win++;S.stats.bj++;bjWin=true}
     else if(dbj&&!pbj){h.res='輸';h.resCls='lose';S.stats.lose++}
     else if(pbj&&dbj){r=h.bet;h.res='和局';h.resCls='push';S.stats.push++}
@@ -570,6 +575,8 @@ function rules(){
   <tr><td>停牌</td><td>不再拿牌，換下一手或莊家</td></tr>
   <tr><td>加倍</td><td>首兩張時可用，注碼加倍、只再拿一張</td></tr>
   <tr><td>分牌</td><td>首兩張點數相同時，拆成兩手各自下注（最多 4 手）；分開的 A 各只發一張</td></tr>
+  <tr><td>五龍</td><td>拿到 5 張牌還沒爆牌，直接贏，<b>1 賠 3</b></td></tr>
+  <tr><td>777</td><td>三張 7，直接贏，<b>1 賠 10</b></td></tr>
   <tr><td>投降</td><td>首兩張時放棄，拿回一半注碼</td></tr>
   <tr><td>保險</td><td>莊家明牌為 A 時可買，花半注；莊家是 21 點賠 2 倍</td></tr></table>
   <h3>賠率與莊家</h3><ul><li>Blackjack 賠 3 : 2，一般贏賠 1 : 1，同點和局退注</li><li>莊家 16 點以下必須補牌；軟 17 依設定停牌或補牌</li><li>分牌後的 A＋10 算 21 點，不算 Blackjack</li><li>牌靴剩不到 1/4 時自動洗牌</li></ul>
